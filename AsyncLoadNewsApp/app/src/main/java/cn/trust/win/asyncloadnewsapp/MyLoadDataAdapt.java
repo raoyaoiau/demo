@@ -13,6 +13,7 @@ import android.widget.TextView;
 
 import java.util.List;
 
+
 /**
  * Created by xiaxu on 2017/12/25.
  */
@@ -28,14 +29,15 @@ public class MyLoadDataAdapt extends BaseAdapter implements AbsListView.OnScroll
     private Context mContext;
     public static String[] URLS;
     private  int iStart, iEnd;
-
     private  boolean bFirstIn;
+
+
 
     public MyLoadDataAdapt(List <NewsData> mNewsDataList, Context mContext, ListView mListView) {
         this.mNewsDataList = mNewsDataList;
         this.mContext = mContext;
 
-        mImageLoad = new ImageLoad (mListView);
+        mImageLoad = new ImageLoad (mListView,  mContext);
         URLS = new String[ mNewsDataList.size () ];
         for (int i=0; i< mNewsDataList.size (); i++)
         {
@@ -44,6 +46,7 @@ public class MyLoadDataAdapt extends BaseAdapter implements AbsListView.OnScroll
         }
         mListView.setOnScrollListener ( this );
         bFirstIn = true;
+
 
     }
 

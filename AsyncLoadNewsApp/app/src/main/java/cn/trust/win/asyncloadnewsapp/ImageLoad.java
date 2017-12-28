@@ -1,23 +1,25 @@
 package cn.trust.win.asyncloadnewsapp;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
-import android.os.Handler;
-import android.os.Message;
-import android.util.ArraySet;
 import android.util.Log;
 import android.util.LruCache;
 import android.widget.ImageView;
 import android.widget.ListView;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
+
+import cn.trust.win.asyncloadnewsapp.libcore.io.DiskLruCache;
 
 /**
  * Created by xiaxu on 2017/12/25.
@@ -27,25 +29,34 @@ public class ImageLoad {
     private ImageView mIV;
     private LruCache<String, Bitmap> mCaches;
     private String  mUrl;
-    private ListView mListView;
-    private Handler mHander = new Handler (  ){
-
-        /**
-         * Subclasses must implement this to receive messages.
-         *
-         * @param msg
-         */
-        @Override
-        public void handleMessage(Message msg) {
-            super.handleMessage ( msg );
-            if ( mIV.getTag ().equals ( mUrl ))
-                mIV.setImageBitmap ( (Bitmap) msg.obj);
-        }
-    };
     private Set<MyLoadImageAsyncTask> mTasks;
+    private ListView mListView;
+    private Context mContext;
+    public static DiskLruCache mDiskLruCache = null;
 
-    public ImageLoad(ListView mListView) {
+    public ImageLoad(ListView mListView, Context mContext) {
         this.mListView = mListView;
+        this.mContext = mContext;
+                        /*
+        本地缓存
+         */
+
+        try {
+            File cacheDir = Utill.getDiskCacheDir(mContext, "bitmap");
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs();
+            }
+            mDiskLruCache = DiskLruCache.open(
+                    cacheDir,
+                    Utill.getAppVersion(mContext),
+                    1,
+                    10 * 1024 * 1024);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+
         mTasks  = new HashSet <> (  );
 
         int cacheSize = (int) (Runtime.getRuntime ().maxMemory ()/4);
@@ -66,6 +77,8 @@ public class ImageLoad {
                 return value.getByteCount ();
             }
         };
+
+
     }
 
     public void showImageByAsync(ImageView mIv, String mUrl)
@@ -80,55 +93,6 @@ public class ImageLoad {
         {
             mIv.setImageBitmap ( bitmap );
         }
-
-    }
-
-
-    /*
-    利用handle去加载图片
-     */
-    public void showImageByThread(ImageView mIV, final String mUrl, String mName)
-    {
-        this.mIV = mIV;
-        this.mUrl = mUrl;
-        Log.i ( MainActivity.TAG, "showImageByThread: " + mName);
-        new Thread ( new Runnable ( ) {
-            @Override
-            public void run() {
-                Bitmap mBitmap = getBitMapFromUrl ( mUrl );
-                Message mMsg = Message.obtain ();
-                mMsg.obj = mBitmap;
-                mHander.sendMessage ( mMsg );
-
-
-            }
-        } ).start ();
-
-    }
-
-    /*
-     通过url异步加载图片
-     */
-    public void loadImages(ImageView mIV, String mUrl)
-    {
-
-//        new MyLoadImageAsyncTask ( mIV, mUrl ).execute ( mUrl );
-//        Bitmap mBitmap = getBitmapFromCache ( mUrl );
-//        if ( mBitmap== null)
-//        {
-
-
-//            MyLoadImageAsyncTask mLoadAsync = new MyLoadImageAsyncTask (mIV, mUrl);
-//            mLoadAsync.execute ( mUrl );
-//            mTasks.add ( mLoadAsync );
-//            new MyLoadImageAsyncTask ( mIV, mUrl ).execute ( mUrl );
-//        }
-//        else
-//        {
-////            ImageView mIV = (ImageView)mListView.findViewWithTag ( mUrl );
-//            if (mIV.getTag ().equals ( mUrl ) && mBitmap != null)
-//                mIV.setImageBitmap ( mBitmap );
-//        }
 
     }
 
@@ -159,24 +123,61 @@ public class ImageLoad {
     }
 
     public void loadImagesForStopScroll(int iStart, int iEnd) {
+        String url=null;
+        Bitmap mBitmap = null;
+        ImageView mIV = null;
         for (int i = iStart; i<iEnd; i++)
         {
-            String url = MyLoadDataAdapt.URLS[i];
-            Bitmap mBitmap = getBitmapFromCache ( url );
-            if (mBitmap == null)
+             url = MyLoadDataAdapt.URLS[i];
+            /*
+            1, 从内存中读取图片，
+             */
+             mBitmap = getBitmapFromCache ( url );
+             mIV = (ImageView)mListView.findViewWithTag ( url );
+            if (mBitmap != null)
             {
-                Log.i ( MainActivity.TAG, "***************loadImagesForStopScroll: "+MyLoadDataAdapt.URLS[i].toString ()  );
+                Log.i ( MainActivity.TAG, "11111111111111---------------loadImagesForStopScroll: "+MyLoadDataAdapt.URLS[i].toString ()  );
 
-                MyLoadImageAsyncTask asyncTask = new MyLoadImageAsyncTask ( url );
-                asyncTask.execute ( url );
-                mTasks.add ( asyncTask );
+
+                mIV.setImageBitmap ( mBitmap );
             }
             else
             {
-                Log.i ( MainActivity.TAG, "---------------loadImagesForStopScroll: "+MyLoadDataAdapt.URLS[i].toString ()  );
+                /*
+                2，从文件中读取
+                 */
+                String key = Utill.hashKeyForDisk ( url );
+                try {
+                    DiskLruCache.Snapshot mSnapShot = mDiskLruCache.get ( key );
+                    if (mSnapShot!=null)
+                    {
+                        InputStream is = mSnapShot.getInputStream ( 0 );
+                        mBitmap = BitmapFactory.decodeStream ( is );
+                        if (mBitmap !=null)
+                        {
+                            Log.i ( MainActivity.TAG, "22222222222222222##############loadImagesForStopScroll: "+MyLoadDataAdapt.URLS[i].toString ()  );
+                            mIV.setImageBitmap ( mBitmap );
+                        }
 
-                ImageView mIV = (ImageView)mListView.findViewWithTag ( url );
-                mIV.setImageBitmap ( mBitmap );
+                    }
+                    else
+                    {
+                            /*
+                            3,从网络上去下载图片
+                             */
+                        Log.i ( MainActivity.TAG, "3333333333333***************loadImagesForStopScroll: "+MyLoadDataAdapt.URLS[i].toString ()+"sss:"  );
+
+                        MyLoadImageAsyncTask asyncTask = new MyLoadImageAsyncTask ( url );
+                        asyncTask.execute ( url );
+                        mTasks.add ( asyncTask );
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace ( );
+                }
+
+
+
+
             }
         }
         
@@ -209,9 +210,35 @@ public class ImageLoad {
 
             String mUrl = strings[0];
             Bitmap mBitmap = getBitMapFromUrl ( mUrl );
+            /*
+            缓存图片到内存
+             */
             if (mBitmap != null)
                 addBitmapToCache ( mUrl, mBitmap );
 
+            /*
+            根据url缓存图片到本地
+             */
+            String key = Utill.hashKeyForDisk(mUrl);
+            DiskLruCache.Editor editor = null;
+            try {
+                editor = mDiskLruCache.edit(key);
+                if (editor != null) {
+                    OutputStream outputStream = editor.newOutputStream(0);
+                    if (Utill.downloadImg(mUrl, outputStream)) {
+                        editor.commit();
+                    } else {
+                        editor.abort();
+                    }
+                }
+                mDiskLruCache.flush();
+            } catch (IOException e) {
+                e.printStackTrace ( );
+            }
+            /*
+
+             }}}缓存图片到本地
+             */
             return mBitmap;
         }
 

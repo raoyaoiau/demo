@@ -38,6 +38,22 @@ public class MainActivity extends Activity {
 
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy ( );
+        /*
+        程序退出时清除包目录下缓存的图片缓存
+         */
+        if (ImageLoad.mDiskLruCache !=null)
+        {
+            try {
+                ImageLoad.mDiskLruCache.delete ();
+            } catch (IOException e) {
+                e.printStackTrace ( );
+            }
+        }
+    }
+
     class GetNewsDataAsyncTask extends AsyncTask<String, Void, List<NewsData>>{
 
         /**
